@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Compressor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+  <div class="header">
+  <div class="header-inner">
+    <svg class="logo" width="56" height="56" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="#0a0a0a" stroke-width="2">
+        <path d="M50 50 L50 8 A42 42 0 0 1 79.7 20.3 Z" fill="#d4af37"/>
+        <path d="M50 50 L79.7 20.3 A42 42 0 0 1 92 50 Z" fill="#e5c158"/>
+        <path d="M50 50 L92 50 A42 42 0 0 1 79.7 79.7 Z" fill="#d4af37"/>
+        <path d="M50 50 L79.7 79.7 A42 42 0 0 1 50 92 Z" fill="#e5c158"/>
+        <path d="M50 50 L50 92 A42 42 0 0 1 20.3 79.7 Z" fill="#d4af37"/>
+        <path d="M50 50 L20.3 79.7 A42 42 0 0 1 8 50 Z" fill="#e5c158"/>
+        <path d="M50 50 L8 50 A42 42 0 0 1 20.3 20.3 Z" fill="#d4af37"/>
+        <path d="M50 50 L20.3 20.3 A42 42 0 0 1 50 8 Z" fill="#e5c158"/>
+      </g>
+    </svg>
+    <div class="header-text">
+      <h1>Video Compressor</h1>
+      <p>Compress your videos to ~20MB while maintaining quality</p>
+    </div>
+  </div>
+</div>
+
+  <div class="main-content">
+    <div class="column-left">
+      <!-- File Selection -->
+      <div class="section">
+        <h2>Step 1: Select Video</h2>
+        <button id="selectBtn" class="btn btn-primary">Choose Video File</button>
+        <div id="fileInfo" class="file-info hidden">
+          <p><strong>File:</strong> <span id="fileName"></span></p>
+          <p><strong>Size:</strong> <span id="fileSize"></span></p>
+        </div>
+      </div>
+
+      <!-- Quality Settings -->
+      <div class="section">
+        <h2>Step 2: Choose Quality</h2>
+        <div class="quality-options">
+          <label class="radio-label">
+            <input type="radio" name="quality" value="ultrafast" checked>
+            <span class="radio-text">
+              <strong>Fast (Larger file)</strong>
+              <small>Best for quick compression, ~18-22MB</small>
+            </span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="quality" value="superfast">
+            <span class="radio-text">
+              <strong>Balanced</strong>
+              <small>Good quality and size, ~15-20MB</small>
+            </span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="quality" value="fast">
+            <span class="radio-text">
+              <strong>High Quality (Slower)</strong>
+              <small>Best quality, ~20-25MB, takes longer</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Output Location -->
+      <div class="section">
+        <h2>Step 3: Choose Output Location</h2>
+        <button id="outputBtn" class="btn btn-secondary">Select Save Location</button>
+        <div id="outputInfo" class="file-info hidden">
+          <p><strong>Output:</strong> <span id="outputPath"></span></p>
+        </div>
+      </div>
+
+      <!-- Compress Button -->
+      <div class="section">
+        <button id="compressBtn" class="btn btn-compress" disabled>Compress Video</button>
+      </div>
+    </div>
+
+    <div class="column-right">
+      <!-- Progress -->
+      <div id="progressSection" class="section hidden">
+        <h2>Compression Progress</h2>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <p id="progressText" class="progress-text">Starting compression...</p>
+      </div>
+
+      <!-- Results -->
+      <div id="resultsSection" class="section hidden">
+        <h2>Compression Complete!</h2>
+        <div class="results-box">
+          <p><strong>Original Size:</strong> <span id="originalSize"></span></p>
+          <p><strong>Compressed Size:</strong> <span id="compressedSize"></span></p>
+          <p><strong>Reduction:</strong> <span id="reduction"></span></p>
+          <p><strong>Parts Created:</strong> <span id="partsCount"></span></p>
+        </div>
+        <div id="filesList" class="files-list"></div>
+        <button id="resetBtn" class="btn btn-primary">Compress Another</button>
+      </div>
+
+      <!-- Error Display -->
+      <div id="errorSection" class="section hidden error-box">
+        <h2>Error</h2>
+        <p id="errorText"></p>
+        <button id="clearErrorBtn" class="btn btn-secondary">Clear</button>
+      </div>
+
+      <!-- Placeholder when nothing is happening yet -->
+      <div id="placeholderSection" class="section placeholder-box">
+        <p>Compression progress and results will appear here.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const path = require('path');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
+const fs = require('fs');
+
+let mainWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1600,
+    height: 900,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  mainWindow.loadFile('index.html');
+  // mainWindow.webContents.openDevTools();
+}
+
+app.on('ready', createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (mainWindow === null) {
+    createWindow();
+  }
+});
+
+// Handle file selection dialog
+ipcMain.handle('select-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Video Files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  return result.filePaths[0] || null;
+});
+
+// Get video duration using ffprobe-static
+function getVideoDuration(inputPath) {
+  return new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      inputPath
+    ];
+
+    const ffprobe = spawn(ffprobePath, args);
+    let output = '';
+
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    ffprobe.on('close', () => {
+      const duration = parseFloat(output);
+      resolve(!isNaN(duration) && duration > 0 ? duration : 0);
+    });
+
+    ffprobe.on('error', () => {
+      resolve(0);
+    });
+  });
+}
+
+// Compress video with auto-split for Discord (good quality, splits as needed)
+ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality }) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!fs.existsSync(inputPath)) {
+        reject(new Error(`Input file not found: ${inputPath}`));
+        return;
+      }
+
+      const duration = await getVideoDuration(inputPath);
+
+      if (duration === 0) {
+        reject(new Error('Could not detect video duration.'));
+        return;
+      }
+
+      // Fixed good-quality bitrate
+      const videoBitrateK = 2200;
+      const audioBitrateK = 128;
+      const totalBitrateK = videoBitrateK + audioBitrateK;
+
+      // Calculate max seconds per part to stay under ~19MB
+      const targetMB = 19;
+      const targetBits = targetMB * 1024 * 1024 * 8;
+      const maxSecondsPerPart = targetBits / (totalBitrateK * 1000);
+      const numParts = Math.ceil(duration / maxSecondsPerPart);
+
+      const outputDir = path.dirname(outputPath);
+      const outputName = path.basename(outputPath, path.extname(outputPath));
+      const cleanName = outputName.replace(/-part\d+$/, '');
+      const outputExt = path.extname(outputPath);
+
+      let totalSize = 0;
+      const createdFiles = [];
+
+      for (let i = 0; i < numParts; i++) {
+        const startTime = i * maxSecondsPerPart;
+        const endTime = Math.min((i + 1) * maxSecondsPerPart, duration);
+        const partDuration = endTime - startTime;
+        const partPath = numParts === 1
+          ? outputPath
+          : path.join(outputDir, `${cleanName}-part${i + 1}${outputExt}`);
+
+        await compressPart(inputPath, partPath, startTime, endTime, videoBitrateK, audioBitrateK, (partProgress) => {
+          const overallProgress = ((i + partProgress / 100) / numParts) * 100;
+          event.sender.send('compression-progress', { progress: Math.round(overallProgress) });
+        });
+
+        if (!fs.existsSync(partPath)) {
+          reject(new Error(`Part ${i + 1} was not created at: ${partPath}`));
+          return;
+        }
+
+        const stats = fs.statSync(partPath);
+        totalSize += stats.size;
+        createdFiles.push({ path: partPath, size: stats.size });
+      }
+
+      event.sender.send('compression-progress', { progress: 100 });
+
+      resolve({ success: true, fileSize: totalSize, parts: numParts, files: createdFiles });
+    } catch (err) {
+      reject(err);
+    }
+  });
+});
+
+// Single-pass compression for one part/segment, with progress callback
+function compressPart(inputPath, outputPath, startTime, endTime, videoBitrateK, audioBitrateK, onProgress) {
+  return new Promise((resolve, reject) => {
+    const partDurationMs = (endTime - startTime) * 1000;
+
+    const args = [
+      '-y',
+      '-ss', startTime.toString(),
+      '-to', endTime.toString(),
+      '-i', inputPath,
+      '-r', '30',
+      '-vf', 'format=yuv420p',
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-b:v', videoBitrateK + 'k',
+      '-c:a', 'aac',
+      '-b:a', audioBitrateK + 'k',
+      '-movflags', '+faststart',
+      '-progress', 'pipe:1',
+      outputPath
+    ];
+
+    const ffmpeg = spawn(ffmpegPath, args);
+    let stderr = '';
+    let stdoutBuffer = '';
+
+    ffmpeg.stdout.on('data', (data) => {
+      stdoutBuffer += data.toString();
+      const match = stdoutBuffer.match(/out_time_ms=(\d+)/g);
+      if (match && match.length > 0) {
+        const lastMatch = match[match.length - 1];
+        const timeMs = parseInt(lastMatch.split('=')[1]) / 1000; // out_time_ms is actually microseconds
+        const progress = Math.min((timeMs / partDurationMs) * 100, 100);
+        onProgress(progress);
+      }
+    });
+
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        onProgress(100);
+        resolve();
+      } else {
+        reject(new Error(`Compression failed: ${stderr.slice(-1000)}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+// Open a file's location in File Explorer
+ipcMain.handle('open-file-location', async (event, filePath) => {
+  shell.showItemInFolder(filePath);
+});
+
+// Handle output directory selection
+ipcMain.handle('select-output-directory', async (event, defaultFilename) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: defaultFilename || '',
+    properties: ['showHiddenFiles'],
+    filters: [
+      { name: 'MP4 Video', extensions: ['mp4'] }
+    ]
+  });
+  return result.filePath || null;
+});
+
+// Get file size
+ipcMain.handle('get-file-size', async (event, filePath) => {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.size;
+  } catch (err) {
+    throw new Error('Could not read file size');
+  }
+});
