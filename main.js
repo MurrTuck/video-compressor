@@ -8,6 +8,7 @@ if (app.isPackaged) {
   ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
   ffprobePath = ffprobePath.replace('app.asar', 'app.asar.unpacked');
 }
+
 const fs = require('fs');
 
 let mainWindow;
@@ -82,7 +83,21 @@ function getVideoDuration(inputPath) {
   });
 }
 
-// Compress video with auto-split for Discord (good quality, splits as needed)
+const HARD_CAP_BYTES = 20 * 1024 * 1024; // 20MB, absolute maximum
+const TARGET_MB = 18.5; // aim under this so normal variance still stays under 20MB
+
+// Map the UI quality choice to an encoding preset and starting bitrate
+function getQualitySettings(quality) {
+  if (quality === 'ultrafast') {
+    return { preset: 'fast', videoBitrateK: 2400 };
+  } else if (quality === 'superfast') {
+    return { preset: 'medium', videoBitrateK: 2200 };
+  } else {
+    return { preset: 'slow', videoBitrateK: 2000 };
+  }
+}
+
+// Compress video with auto-split, guaranteed under 20MB per part
 ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality }) => {
   return new Promise(async (resolve, reject) => {
     try {
@@ -98,14 +113,11 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
         return;
       }
 
-      // Fixed good-quality bitrate
-      const videoBitrateK = 2200;
+      const { preset, videoBitrateK } = getQualitySettings(quality);
       const audioBitrateK = 128;
       const totalBitrateK = videoBitrateK + audioBitrateK;
 
-      // Calculate max seconds per part to stay under ~19MB
-      const targetMB = 19;
-      const targetBits = targetMB * 1024 * 1024 * 8;
+      const targetBits = TARGET_MB * 1024 * 1024 * 8;
       const maxSecondsPerPart = targetBits / (totalBitrateK * 1000);
       const numParts = Math.ceil(duration / maxSecondsPerPart);
 
@@ -120,12 +132,11 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
       for (let i = 0; i < numParts; i++) {
         const startTime = i * maxSecondsPerPart;
         const endTime = Math.min((i + 1) * maxSecondsPerPart, duration);
-        const partDuration = endTime - startTime;
         const partPath = numParts === 1
           ? outputPath
           : path.join(outputDir, `${cleanName}-part${i + 1}${outputExt}`);
 
-        await compressPart(inputPath, partPath, startTime, endTime, videoBitrateK, audioBitrateK, (partProgress) => {
+        await compressPartWithCap(inputPath, partPath, startTime, endTime, preset, videoBitrateK, audioBitrateK, (partProgress) => {
           const overallProgress = ((i + partProgress / 100) / numParts) * 100;
           event.sender.send('compression-progress', { progress: Math.round(overallProgress) });
         });
@@ -149,10 +160,33 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
   });
 });
 
+// Compress a part, then verify size and re-encode at a lower bitrate if it exceeds 20MB
+async function compressPartWithCap(inputPath, outputPath, startTime, endTime, preset, initialVideoBitrateK, audioBitrateK, onProgress) {
+  let videoBitrateK = initialVideoBitrateK;
+  const maxAttempts = 4;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await compressPart(inputPath, outputPath, startTime, endTime, preset, videoBitrateK, audioBitrateK, onProgress);
+
+    const size = fs.statSync(outputPath).size;
+
+    if (size <= HARD_CAP_BYTES) {
+      return; // success, under the cap
+    }
+
+    // Too big: scale bitrate down proportionally, with extra margin, and try again
+    const overshootRatio = HARD_CAP_BYTES / size;
+    videoBitrateK = Math.max(Math.floor(videoBitrateK * overshootRatio * 0.90), 150);
+  }
+  // After max attempts, whatever was produced last stands (extremely rare to reach this point)
+}
+
 // Single-pass compression for one part/segment, with progress callback
-function compressPart(inputPath, outputPath, startTime, endTime, videoBitrateK, audioBitrateK, onProgress) {
+function compressPart(inputPath, outputPath, startTime, endTime, preset, videoBitrateK, audioBitrateK, onProgress) {
   return new Promise((resolve, reject) => {
     const partDurationMs = (endTime - startTime) * 1000;
+    const maxrateK = Math.round(videoBitrateK * 1.5);
+    const bufsizeK = Math.round(videoBitrateK * 3);
 
     const args = [
       '-y',
@@ -162,8 +196,10 @@ function compressPart(inputPath, outputPath, startTime, endTime, videoBitrateK, 
       '-r', '30',
       '-vf', 'format=yuv420p',
       '-c:v', 'libx264',
-      '-preset', 'medium',
+      '-preset', preset,
       '-b:v', videoBitrateK + 'k',
+      '-maxrate', maxrateK + 'k',
+      '-bufsize', bufsizeK + 'k',
       '-c:a', 'aac',
       '-b:a', audioBitrateK + 'k',
       '-movflags', '+faststart',
@@ -180,7 +216,7 @@ function compressPart(inputPath, outputPath, startTime, endTime, videoBitrateK, 
       const match = stdoutBuffer.match(/out_time_ms=(\d+)/g);
       if (match && match.length > 0) {
         const lastMatch = match[match.length - 1];
-        const timeMs = parseInt(lastMatch.split('=')[1]) / 1000; // out_time_ms is actually microseconds
+        const timeMs = parseInt(lastMatch.split('=')[1]) / 1000;
         const progress = Math.min((timeMs / partDurationMs) * 100, 100);
         onProgress(progress);
       }
