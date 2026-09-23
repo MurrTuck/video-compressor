@@ -11,17 +11,26 @@
   <div class="header">
   <div class="header-inner">
     <svg class="logo" width="56" height="56" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <g stroke="#0a0a0a" stroke-width="2">
-        <path d="M50 50 L50 8 A42 42 0 0 1 79.7 20.3 Z" fill="#d4af37"/>
-        <path d="M50 50 L79.7 20.3 A42 42 0 0 1 92 50 Z" fill="#e5c158"/>
-        <path d="M50 50 L92 50 A42 42 0 0 1 79.7 79.7 Z" fill="#d4af37"/>
-        <path d="M50 50 L79.7 79.7 A42 42 0 0 1 50 92 Z" fill="#e5c158"/>
-        <path d="M50 50 L50 92 A42 42 0 0 1 20.3 79.7 Z" fill="#d4af37"/>
-        <path d="M50 50 L20.3 79.7 A42 42 0 0 1 8 50 Z" fill="#e5c158"/>
-        <path d="M50 50 L8 50 A42 42 0 0 1 20.3 20.3 Z" fill="#d4af37"/>
-        <path d="M50 50 L20.3 20.3 A42 42 0 0 1 50 8 Z" fill="#e5c158"/>
-      </g>
-    </svg>
+  <defs>
+    <linearGradient id="sunGradientHeader" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffb347"/>
+      <stop offset="35%" stop-color="#ff7a4d"/>
+      <stop offset="65%" stop-color="#ff3d68"/>
+      <stop offset="100%" stop-color="#d6249b"/>
+    </linearGradient>
+    <clipPath id="sunClipHeader">
+      <circle cx="50" cy="52" r="34"/>
+    </clipPath>
+  </defs>
+  <circle cx="50" cy="52" r="34" fill="url(#sunGradientHeader)"/>
+  <g clip-path="url(#sunClipHeader)" stroke="#170b2e" stroke-width="2.2">
+    <line x1="10" y1="48" x2="90" y2="48"/>
+    <line x1="10" y1="56" x2="90" y2="56"/>
+    <line x1="10" y1="64" x2="90" y2="64"/>
+    <line x1="10" y1="72" x2="90" y2="72"/>
+    <line x1="10" y1="80" x2="90" y2="80"/>
+  </g>
+</svg>
     <div class="header-text">
       <h1>Video Compressor</h1>
       <p>Compress your videos to ~20MB while maintaining quality</p>
