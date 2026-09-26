@@ -46,7 +46,7 @@ app.on('activate', () => {
 
 // ---------- History log ----------
 // Saved in the app's settings folder, not in the project folder
-const MAX_HISTORY_ENTRIES = 500;
+const MAX_HISTORY_ENTRIES = 10; // only keep the 10 most recent jobs
 
 function getHistoryPath() {
   return path.join(app.getPath('userData'), 'history.json');
@@ -77,7 +77,13 @@ function addHistoryEntry(entry) {
 }
 
 ipcMain.handle('get-history', async () => {
-  return readHistory();
+  const history = readHistory();
+  if (history.length > MAX_HISTORY_ENTRIES) {
+    const trimmed = history.slice(0, MAX_HISTORY_ENTRIES);
+    writeHistory(trimmed);
+    return trimmed;
+  }
+  return history;
 });
 
 ipcMain.handle('clear-history', async () => {

@@ -28,6 +28,8 @@ const QUALITY_LABELS = {
   fast: 'High Quality'
 };
 
+let fullHistory = [];
+
 // ---------- Tabs ----------
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -154,17 +156,17 @@ clearHistoryBtn.addEventListener('click', async () => {
 // ---------- History ----------
 async function loadHistory() {
   try {
-    const history = await window.electronAPI.getHistory();
-    renderHistory(history);
+    fullHistory = await window.electronAPI.getHistory();
   } catch (err) {
-    renderHistory([]);
+    fullHistory = [];
   }
+  renderHistory();
 }
 
-function renderHistory(history) {
+function renderHistory() {
   historyBody.innerHTML = '';
 
-  if (!history || history.length === 0) {
+  if (!fullHistory || fullHistory.length === 0) {
     historyEmpty.classList.remove('hidden');
     historyTableWrap.classList.add('hidden');
     clearHistoryBtn.disabled = true;
@@ -176,13 +178,13 @@ function renderHistory(history) {
   historyTableWrap.classList.remove('hidden');
   clearHistoryBtn.disabled = false;
 
-  const totalOriginal = history.reduce((sum, e) => sum + (e.originalSize || 0), 0);
-  const totalCompressed = history.reduce((sum, e) => sum + (e.compressedSize || 0), 0);
-  const videoWord = history.length === 1 ? 'video' : 'videos';
+  const totalOriginal = fullHistory.reduce((sum, e) => sum + (e.originalSize || 0), 0);
+  const totalCompressed = fullHistory.reduce((sum, e) => sum + (e.compressedSize || 0), 0);
+  const videoWord = fullHistory.length === 1 ? 'video' : 'videos';
   historySummary.textContent =
-    `${history.length} ${videoWord} processed, ${formatBytes(totalOriginal)} reduced to ${formatBytes(totalCompressed)}`;
+    `Last ${fullHistory.length} ${videoWord}: ${formatBytes(totalOriginal)} reduced to ${formatBytes(totalCompressed)}`;
 
-  history.forEach((entry) => {
+  fullHistory.forEach((entry) => {
     const row = document.createElement('tr');
 
     const reduction = entry.originalSize
@@ -222,6 +224,7 @@ function renderHistory(history) {
 
     historyBody.appendChild(row);
   });
+
 }
 
 function addCell(row, text) {
