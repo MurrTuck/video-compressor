@@ -37,10 +37,52 @@ app.on('window-all-closed', () => {
   }
 });
 
+// Mac: reopen the window when the dock icon is clicked and no windows are open
 app.on('activate', () => {
-  if (mainWindow === null) {
+  if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+// ---------- History log ----------
+// Saved in the app's settings folder, not in the project folder
+const MAX_HISTORY_ENTRIES = 500;
+
+function getHistoryPath() {
+  return path.join(app.getPath('userData'), 'history.json');
+}
+
+function readHistory() {
+  try {
+    const data = fs.readFileSync(getHistoryPath(), 'utf8');
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeHistory(history) {
+  try {
+    fs.writeFileSync(getHistoryPath(), JSON.stringify(history, null, 2));
+  } catch (err) {
+    console.error('Could not save history:', err);
+  }
+}
+
+function addHistoryEntry(entry) {
+  const history = readHistory();
+  history.unshift(entry); // newest first
+  writeHistory(history.slice(0, MAX_HISTORY_ENTRIES));
+}
+
+ipcMain.handle('get-history', async () => {
+  return readHistory();
+});
+
+ipcMain.handle('clear-history', async () => {
+  writeHistory([]);
+  return true;
 });
 
 // Handle file selection dialog
@@ -106,6 +148,7 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
         return;
       }
 
+      const startedAt = Date.now();
       const duration = await getVideoDuration(inputPath);
 
       if (duration === 0) {
@@ -121,6 +164,9 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
       const maxSecondsPerPart = targetBits / (totalBitrateK * 1000);
       const numParts = Math.ceil(duration / maxSecondsPerPart);
 
+      // Split the video evenly so there is no tiny leftover part at the end
+      const secondsPerPart = duration / numParts;
+
       const outputDir = path.dirname(outputPath);
       const outputName = path.basename(outputPath, path.extname(outputPath));
       const cleanName = outputName.replace(/-part\d+$/, '');
@@ -130,8 +176,8 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
       const createdFiles = [];
 
       for (let i = 0; i < numParts; i++) {
-        const startTime = i * maxSecondsPerPart;
-        const endTime = Math.min((i + 1) * maxSecondsPerPart, duration);
+        const startTime = i * secondsPerPart;
+        const endTime = Math.min((i + 1) * secondsPerPart, duration);
         const partPath = numParts === 1
           ? outputPath
           : path.join(outputDir, `${cleanName}-part${i + 1}${outputExt}`);
@@ -152,6 +198,28 @@ ipcMain.handle('compress-video', async (event, { inputPath, outputPath, quality 
       }
 
       event.sender.send('compression-progress', { progress: 100 });
+
+      // Record this job in the history log
+      let originalSize = 0;
+      try {
+        originalSize = fs.statSync(inputPath).size;
+      } catch (err) {
+        originalSize = 0;
+      }
+
+      addHistoryEntry({
+        id: Date.now(),
+        date: new Date().toISOString(),
+        inputName: path.basename(inputPath),
+        inputPath: inputPath,
+        originalSize: originalSize,
+        compressedSize: totalSize,
+        parts: numParts,
+        quality: quality,
+        videoDurationSeconds: Math.round(duration),
+        processingSeconds: Math.round((Date.now() - startedAt) / 1000),
+        files: createdFiles
+      });
 
       resolve({ success: true, fileSize: totalSize, parts: numParts, files: createdFiles });
     } catch (err) {
@@ -241,9 +309,19 @@ function compressPart(inputPath, outputPath, startTime, endTime, preset, videoBi
   });
 }
 
-// Open a file's location in File Explorer
+// Open a file's location in File Explorer / Finder
+// If the file was moved or deleted, open the folder it was in instead
 ipcMain.handle('open-file-location', async (event, filePath) => {
-  shell.showItemInFolder(filePath);
+  if (fs.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  const folder = path.dirname(filePath);
+  if (fs.existsSync(folder)) {
+    await shell.openPath(folder);
+    return true;
+  }
+  return false;
 });
 
 // Handle output directory selection

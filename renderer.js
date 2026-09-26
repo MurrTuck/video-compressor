@@ -14,6 +14,41 @@ const progressSection = document.getElementById('progressSection');
 const resultsSection = document.getElementById('resultsSection');
 const errorSection = document.getElementById('errorSection');
 
+// History elements
+const tabs = document.querySelectorAll('.tab');
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+const historyBody = document.getElementById('historyBody');
+const historyEmpty = document.getElementById('historyEmpty');
+const historyTableWrap = document.getElementById('historyTableWrap');
+const historySummary = document.getElementById('historySummary');
+
+const QUALITY_LABELS = {
+  ultrafast: 'Fast',
+  superfast: 'Balanced',
+  fast: 'High Quality'
+};
+
+// ---------- Tabs ----------
+tabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const viewId = tab.dataset.view;
+
+    tabs.forEach((t) => {
+      const isActive = t === tab;
+      t.classList.toggle('active', isActive);
+      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    document.querySelectorAll('.view').forEach((view) => {
+      view.classList.toggle('hidden', view.id !== viewId);
+    });
+
+    if (viewId === 'historyView') {
+      loadHistory();
+    }
+  });
+});
+
 // Select video file
 selectBtn.addEventListener('click', async () => {
   try {
@@ -31,7 +66,7 @@ selectBtn.addEventListener('click', async () => {
 // Select output location
 outputBtn.addEventListener('click', async () => {
   try {
-    const fileName = selectedFilePath.split('\\').pop();
+    const fileName = getFileName(selectedFilePath);
     const baseFileName = fileName.split('.')[0];
     const prefilledName = `${baseFileName}-part1.mp4`;
     const filePath = await window.electronAPI.selectOutputDirectory(prefilledName);
@@ -55,10 +90,10 @@ compressBtn.addEventListener('click', async () => {
   const quality = document.querySelector('input[name="quality"]:checked').value;
 
   compressBtn.disabled = true;
-document.getElementById('placeholderSection').classList.add('hidden');
-progressSection.classList.remove('hidden');
-resultsSection.classList.add('hidden');
-errorSection.classList.add('hidden');
+  document.getElementById('placeholderSection').classList.add('hidden');
+  progressSection.classList.remove('hidden');
+  resultsSection.classList.add('hidden');
+  errorSection.classList.add('hidden');
   document.getElementById('progressFill').style.width = '0%';
   document.getElementById('progressText').textContent = 'Compressing... 0%';
 
@@ -103,9 +138,121 @@ clearErrorBtn.addEventListener('click', () => {
   errorSection.classList.add('hidden');
 });
 
-// Helper functions
+// Clear history
+clearHistoryBtn.addEventListener('click', async () => {
+  const confirmed = confirm('Clear the entire history? This only removes the log, not your video files.');
+  if (!confirmed) return;
+
+  try {
+    await window.electronAPI.clearHistory();
+    loadHistory();
+  } catch (err) {
+    alert('Could not clear history: ' + err.message);
+  }
+});
+
+// ---------- History ----------
+async function loadHistory() {
+  try {
+    const history = await window.electronAPI.getHistory();
+    renderHistory(history);
+  } catch (err) {
+    renderHistory([]);
+  }
+}
+
+function renderHistory(history) {
+  historyBody.innerHTML = '';
+
+  if (!history || history.length === 0) {
+    historyEmpty.classList.remove('hidden');
+    historyTableWrap.classList.add('hidden');
+    clearHistoryBtn.disabled = true;
+    historySummary.textContent = '';
+    return;
+  }
+
+  historyEmpty.classList.add('hidden');
+  historyTableWrap.classList.remove('hidden');
+  clearHistoryBtn.disabled = false;
+
+  const totalOriginal = history.reduce((sum, e) => sum + (e.originalSize || 0), 0);
+  const totalCompressed = history.reduce((sum, e) => sum + (e.compressedSize || 0), 0);
+  const videoWord = history.length === 1 ? 'video' : 'videos';
+  historySummary.textContent =
+    `${history.length} ${videoWord} processed, ${formatBytes(totalOriginal)} reduced to ${formatBytes(totalCompressed)}`;
+
+  history.forEach((entry) => {
+    const row = document.createElement('tr');
+
+    const reduction = entry.originalSize
+      ? Math.round(((entry.originalSize - entry.compressedSize) / entry.originalSize) * 100) + '%'
+      : 'N/A';
+
+    addCell(row, formatDate(entry.date));
+
+    const videoCell = addCell(row, entry.inputName || 'Unknown');
+    videoCell.classList.add('history-video');
+    videoCell.title = entry.inputPath || '';
+
+    addCell(row, entry.originalSize ? formatBytes(entry.originalSize) : 'N/A');
+    addCell(row, formatBytes(entry.compressedSize || 0));
+
+    const reductionCell = addCell(row, reduction);
+    reductionCell.classList.add('history-reduction');
+
+    addCell(row, String(entry.parts || 0));
+    addCell(row, QUALITY_LABELS[entry.quality] || entry.quality || 'N/A');
+    addCell(row, formatDuration(entry.processingSeconds));
+
+    const actionCell = document.createElement('td');
+    if (entry.files && entry.files.length > 0) {
+      const btn = document.createElement('button');
+      btn.className = 'history-show-btn';
+      btn.textContent = 'Show in Folder';
+      btn.addEventListener('click', async () => {
+        const opened = await window.electronAPI.openFileLocation(entry.files[0].path);
+        if (!opened) {
+          alert('That folder no longer exists. The files may have been moved or deleted.');
+        }
+      });
+      actionCell.appendChild(btn);
+    }
+    row.appendChild(actionCell);
+
+    historyBody.appendChild(row);
+  });
+}
+
+function addCell(row, text) {
+  const cell = document.createElement('td');
+  cell.textContent = text;
+  row.appendChild(cell);
+  return cell;
+}
+
+function formatDate(isoString) {
+  if (!isoString) return 'N/A';
+  const d = new Date(isoString);
+  return d.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function formatDuration(seconds) {
+  if (seconds === undefined || seconds === null) return 'N/A';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// ---------- Helper functions ----------
 function displayFileInfo(filePath) {
-  const fileName = filePath.split('\\').pop();
+  const fileName = getFileName(filePath);
   document.getElementById('fileName').textContent = fileName;
 
   window.electronAPI.getFileSize(filePath).then(size => {
@@ -135,7 +282,7 @@ function showResults(result) {
   filesListDiv.innerHTML = '';
 
   result.files.forEach((file, index) => {
-    const fileName = file.path.split('\\').pop();
+    const fileName = getFileName(file.path);
     const row = document.createElement('div');
     row.className = 'file-row';
 
@@ -169,11 +316,16 @@ function checkReadyToCompress() {
 }
 
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 Bytes';
+  if (!bytes || bytes === 0) return '0 Bytes';
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Get just the file name from a full path (works on Windows and Mac)
+function getFileName(filePath) {
+  return filePath.split(/[\\/]/).pop();
 }
 
 // Listen for compression progress

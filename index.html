@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Compressor</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="history.css">
 </head>
 <body>
   <div class="container">
@@ -38,6 +39,14 @@
   </div>
 </div>
 
+  <!-- Tabs -->
+  <nav class="tabs" role="tablist">
+    <button class="tab active" role="tab" data-view="compressView" aria-selected="true">Compress</button>
+    <button class="tab" role="tab" data-view="historyView" aria-selected="false">History</button>
+  </nav>
+
+  <!-- ===== Compress view ===== -->
+  <div id="compressView" class="view">
   <div class="main-content">
     <div class="column-left">
       <!-- File Selection -->
@@ -126,6 +135,43 @@
       <!-- Placeholder when nothing is happening yet -->
       <div id="placeholderSection" class="section placeholder-box">
         <p>Compression progress and results will appear here.</p>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ===== History view ===== -->
+  <div id="historyView" class="view hidden">
+    <div class="history-wrap">
+      <div class="history-header">
+        <div>
+          <h2>Compression History</h2>
+          <p id="historySummary" class="history-summary"></p>
+        </div>
+        <button id="clearHistoryBtn" class="btn btn-secondary history-clear-btn">Clear History</button>
+      </div>
+
+      <div id="historyEmpty" class="section placeholder-box hidden">
+        <p>No videos yet. Compressed videos will be listed here.</p>
+      </div>
+
+      <div id="historyTableWrap" class="history-table-wrap hidden">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Video</th>
+              <th>Original</th>
+              <th>Compressed</th>
+              <th>Reduction</th>
+              <th>Parts</th>
+              <th>Quality</th>
+              <th>Time</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
       </div>
     </div>
   </div>

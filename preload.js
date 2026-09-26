@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFileSize: (filePath) => ipcRenderer.invoke('get-file-size', filePath),
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
   onCompressionProgress: (callback) =>
-    ipcRenderer.on('compression-progress', (event, data) => callback(data))
+    ipcRenderer.on('compression-progress', (event, data) => callback(data)),
+  getHistory: () => ipcRenderer.invoke('get-history'),
+  clearHistory: () => ipcRenderer.invoke('clear-history')
 });
