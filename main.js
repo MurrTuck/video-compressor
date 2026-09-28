@@ -29,7 +29,13 @@ function createWindow() {
   // mainWindow.webContents.openDevTools();
 }
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  // Mac: show the app logo in the dock (the packaged .app uses icon.icns instead)
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(path.join(__dirname, 'icon.png'));
+  }
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
